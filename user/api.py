@@ -121,30 +121,35 @@ async def update_user(id: str, request: dict, response: Response) -> User|None:
 )
 async def create_order(
     id: str,
-    request: Order
-) -> Order:
-    collection = db["orders"]
-    new_article = await collection.insert_one(jsonable_encoder(request))
-    created_article = await collection.find_one({"_id": new_article.inserted_id})
-
-    created_article["id"] = str(created_article["_id"])
-
-    collection = db["users"]
-    user = await collection.find_one({"_id": ObjectId(id)})
+    request: Order,
+) -> User|None:
+    collection1 = db["users"]
+    user = await collection1.find_one({"_id": ObjectId(id)})
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No user is found by provided id: {id}",
         )
     user["id"] = str(user["_id"])
+    user_order_list = user["order_list"]
 
-    updated = await collection.find_one_and_update(
-            {"_id": user["_id"]}, {"$set": {"order_list": request}}, return_document=ReturnDocument.AFTER
+    collection2 = db["orders"]
+
+    new_article = await collection2.insert_one(jsonable_encoder(request))
+    created_article = await collection2.find_one({"_id": new_article.inserted_id})
+
+    created_article["id"] = str(created_article["_id"])
+
+    user_order_list.append(created_article)
+
+    updated = await collection1.find_one_and_update(
+            {"_id": user["_id"]}, {"$set": {"order_list": user_order_list}}, return_document=ReturnDocument.AFTER
     )
     updated["id"] = str(updated["_id"])
+
+    return updated
     
 
-    return created_article
 
 @router.get("/order")
 async def all_orders(
@@ -176,36 +181,3 @@ async def order(id: str) -> Order:
         )
     order["id"] = str(order["_id"])
     return order
-
-@router.delete("/order/{id}")
-async def destroy_order(
-    id: str,
-):
-    collection = db["orders"]
-    delete_result = await collection.delete_one({"_id": ObjectId(id)})
-
-    if delete_result.deleted_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No order is found by provided id: {id}",
-        )
-
-    return {"msg": f"An order of id {id} is deleted."}
-
-@router.put("/order/{id}", status_code=status.HTTP_202_ACCEPTED)
-async def update_order(id: str, request: dict) -> Order:
-    collection = db["orders"]
-    order = await collection.find_one({"_id": ObjectId(id)})
-
-    if order is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No order is found by provided id: {id}",
-        )
-
-    updated = await collection.find_one_and_update(
-        {"_id": order["_id"]}, {"$set": request}, return_document=ReturnDocument.AFTER
-    )
-    updated["id"] = str(updated["_id"])
-
-    return updated
